@@ -1,0 +1,39 @@
+name: Code Quality
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  duplication:
+    name: Code Duplication Check
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+
+      - name: Install jscpd
+        run: npm install -g jscpd
+
+      - name: Run duplication detection
+        run: jscpd --config .jscpd.json .
+
+      - name: Upload duplication report
+        if: always() && hashFiles('.jscpd-report/**') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: jscpd-report
+          path: .jscpd-report/
+          retention-days: 30

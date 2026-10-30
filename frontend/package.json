@@ -1,0 +1,60 @@
+{
+  "name": "z8run-frontend",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "description": "Visual flow editor for z8run",
+  "license": "Apache-2.0 OR MIT",
+  "homepage": "https://z8run.org",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/z8run/z8run.git",
+    "directory": "frontend"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "check": "biome check .",
+    "check:fix": "biome check --fix .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@codemirror/lang-javascript": "^6.2.0",
+    "@codemirror/lang-json": "^6.0.0",
+    "@codemirror/lang-python": "^6.1.0",
+    "@codemirror/lang-rust": "^6.0.0",
+    "@codemirror/lang-sql": "^6.7.0",
+    "@codemirror/view": "^6.43.12",
+    "@radix-ui/react-dialog": "^1.1.23",
+    "@radix-ui/react-dropdown-menu": "^2.1.24",
+    "@radix-ui/react-separator": "^1.1.15",
+    "@radix-ui/react-tooltip": "^1.2.16",
+    "@uiw/react-codemirror": "^4.25.9",
+    "@xyflow/react": "^12.11.6",
+    "clsx": "^2.1.1",
+    "ky": "^1.7.4",
+    "lucide-react": "^1.46.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-router-dom": "^7.18.4",
+    "tailwind-merge": "^3.7.0",
+    "zod": "^4.6.5",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.6.1",
+    "postcss": "^8.5.28",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "vitest": "^5.0.1"
+  }
+}

@@ -1,0 +1,12 @@
+# Reuse the frontend-builder stage from the main Dockerfile
+FROM node:24-bookworm-slim AS builder
+
+WORKDIR /build
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm ci
+COPY frontend/ .
+RUN npm run build
+
+FROM nginx:alpine
+COPY --from=builder /build/dist /var/www/html
+COPY deploy/landing/ /var/www/landing/

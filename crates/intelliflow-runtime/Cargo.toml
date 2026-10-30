@@ -1,0 +1,24 @@
+[package]
+name = "intelliflow-runtime"
+description = "Sandboxed WebAssembly plugin runtime for z8run - extend flows with custom WASM nodes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["wasm", "wasmtime", "plugin", "sandbox", "runtime"]
+categories = ["wasm", "development-tools"]
+
+[dependencies]
+intelliflow-core = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+wasmtime = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+toml = { workspace = true }
+async-trait = { workspace = true }

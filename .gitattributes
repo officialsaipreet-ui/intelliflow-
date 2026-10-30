@@ -1,0 +1,8 @@
+# Keep LF line endings on every platform (matches .editorconfig), so Biome
+# and rustfmt checks pass on Windows checkouts too.
+* text=auto eol=lf
+
+*.png binary
+*.gif binary
+*.ico binary
+*.wasm binary

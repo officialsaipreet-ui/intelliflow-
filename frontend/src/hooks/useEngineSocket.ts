@@ -1,0 +1,312 @@
+import type { EngineEvent } from "@/lib/schemas";
+import { parseEngineEvent } from "@/lib/validation";
+import { useFlowStore } from "@/stores/flowStore";
+import { useEffect } from "react";
+import { create } from "zustand";
+
+/** Engine event received from the WebSocket (validated by its schema). */
+export type { EngineEvent } from "@/lib/schemas";
+
+interface EngineLogEntry {
+  id: number;
+  timestamp: Date;
+  event: EngineEvent;
+}
+
+/** Maps core UUID → canvas node ID for visual feedback */
+type NodeMap = Record<string, string>;
+
+/** Info about a canvas node, resolved for log display */
+export interface NodeInfo {
+  canvasId: string;
+  label: string;
+  nodeType: string;
+}
+
+/** Maps core UUID → node info for descriptive logs */
+type NodeInfoMap = Record<string, NodeInfo>;
+
+interface EngineStore {
+  connected: boolean;
+  running: boolean;
+  logs: EngineLogEntry[];
+  /** Reverse map: core UUID → canvas node ID */
+  nodeMap: NodeMap;
+  /** Reverse map: core UUID → {canvasId, label, nodeType} for log display */
+  nodeInfoMap: NodeInfoMap;
+  /** Accumulated streaming text by node_id */
+  streamingNodes: Record<string, string>;
+  setConnected: (v: boolean) => void;
+  setRunning: (v: boolean) => void;
+  addLog: (event: EngineEvent) => void;
+  clearLogs: () => void;
+  /** Store the node_map returned by start_flow (canvas_id → UUID), reversed for lookup */
+  setNodeMap: (map: Record<string, string>) => void;
+}
+
+let logCounter = 0;
+let resetTimer: ReturnType<typeof setTimeout> | null = null;
+/** Queue of node events that arrived before node_map was available */
+let pendingNodeEvents: EngineEvent[] = [];
+
+/** Apply a node event to the canvas (update node visual status) */
+function applyNodeEvent(event: EngineEvent, nodeMap: NodeMap) {
+  if (!event.node_id) return;
+  const canvasId = nodeMap[event.node_id];
+  if (!canvasId) return;
+  const { setNodeStatus } = useFlowStore.getState();
+  if (event.type === "node_started") {
+    setNodeStatus(canvasId, "running");
+  } else if (event.type === "node_completed") {
+    setNodeStatus(canvasId, "success");
+  } else if (event.type === "node_skipped") {
+    setNodeStatus(canvasId, "disabled");
+  } else if (event.type === "node_error") {
+    setNodeStatus(canvasId, "error");
+  }
+}
+
+export const useEngineStore = create<EngineStore>((set, get) => ({
+  connected: false,
+  running: false,
+  logs: [],
+  nodeMap: {},
+  nodeInfoMap: {},
+  streamingNodes: {},
+
+  setConnected: (v) => set({ connected: v }),
+  setRunning: (v) => set({ running: v }),
+
+  setNodeMap: (forwardMap) => {
+    // Reverse: canvas_id → uuid  →  uuid → canvas_id
+    const reversed: NodeMap = {};
+    const infoMap: NodeInfoMap = {};
+
+    // Get canvas nodes from flowStore to resolve names
+    const canvasNodes = useFlowStore.getState().nodes;
+    const nodeDataById: Record<string, { label: string; nodeType: string }> =
+      {};
+    for (const n of canvasNodes) {
+      const d = n.data as Record<string, unknown>;
+      nodeDataById[n.id] = {
+        label: String(d.label ?? "Node"),
+        nodeType: String(d.type ?? d.nodeType ?? "unknown"),
+      };
+    }
+
+    for (const [canvasId, uuid] of Object.entries(forwardMap)) {
+      reversed[uuid] = canvasId;
+      const meta = nodeDataById[canvasId];
+      infoMap[uuid] = {
+        canvasId,
+        label: meta?.label ?? canvasId,
+        nodeType: meta?.nodeType ?? "unknown",
+      };
+    }
+
+    set({ nodeMap: reversed, nodeInfoMap: infoMap });
+
+    // Replay any events that arrived before the map was ready
+    if (pendingNodeEvents.length > 0) {
+      const queued = [...pendingNodeEvents];
+      pendingNodeEvents = [];
+      for (const evt of queued) {
+        applyNodeEvent(evt, reversed);
+      }
+    }
+  },
+
+  addLog: (event) => {
+    // Handle stream chunks separately - don't create a log entry for each chunk
+    if (event.type === "stream_chunk") {
+      const { streamingNodes } = get();
+      const nodeId = event.node_id;
+
+      if (nodeId) {
+        if (event.done) {
+          // Final chunk - clear the streaming state for this node
+          const updated = { ...streamingNodes };
+          delete updated[nodeId];
+          set({ streamingNodes: updated });
+        } else if (event.chunk) {
+          // Accumulate chunk
+          const accumulated = (streamingNodes[nodeId] || "") + event.chunk;
+          set({ streamingNodes: { ...streamingNodes, [nodeId]: accumulated } });
+
+          // Update node visual feedback (show it's streaming)
+          const { nodeMap } = get();
+          if (nodeId && nodeMap[nodeId]) {
+            useFlowStore.getState().setNodeStatus(nodeMap[nodeId], "running");
+          }
+        }
+      }
+      // Don't create a log entry for intermediate chunks
+      return;
+    }
+
+    logCounter++;
+    const entry: EngineLogEntry = {
+      id: logCounter,
+      timestamp: new Date(),
+      event,
+    };
+    const logs = [...get().logs, entry].slice(-200);
+    set({ logs });
+
+    // Update running state based on event type
+    if (event.type === "flow_started") {
+      set({ running: true });
+      pendingNodeEvents = []; // clear any stale queue
+      useFlowStore.getState().resetAllNodeStatus();
+    } else if (
+      event.type === "flow_completed" ||
+      event.type === "flow_error" ||
+      event.type === "flow_stopped"
+    ) {
+      set({ running: false });
+      // Keep success/error visible for 4 seconds, then reset to idle
+      if (resetTimer) clearTimeout(resetTimer);
+      resetTimer = setTimeout(() => {
+        useFlowStore.getState().resetAllNodeStatus();
+        resetTimer = null;
+      }, 4000);
+    }
+
+    // Update individual node visual status
+    const { nodeMap } = get();
+    if (event.node_id) {
+      if (Object.keys(nodeMap).length > 0) {
+        // Map is ready - apply immediately
+        applyNodeEvent(event, nodeMap);
+      } else {
+        // Map not ready yet (HTTP response still in flight) - queue for replay
+        pendingNodeEvents.push(event);
+      }
+    }
+  },
+
+  clearLogs: () => set({ logs: [] }),
+}));
+
+// ─── Singleton WebSocket manager (outside React lifecycle) ───────────
+//
+// Strategy: the actual connect() is debounced by 150ms so that React
+// Strict Mode's mount→unmount→mount cycle (which happens synchronously
+// within a single microtask flush) resolves before we ever open a socket.
+// This guarantees exactly ONE connection regardless of double-mounts.
+
+let ws: WebSocket | null = null;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let connectTimer: ReturnType<typeof setTimeout> | null = null;
+let refCount = 0;
+
+function getWsUrl(): string {
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  // Always same-origin so the HttpOnly session cookie is sent on the handshake
+  // (SEC-009). In dev the vite server proxies /ws to the backend.
+  return `${protocol}//${window.location.host}/ws/engine`;
+}
+
+function doConnect() {
+  // Already connected or connecting - nothing to do
+  if (
+    ws?.readyState === WebSocket.OPEN ||
+    ws?.readyState === WebSocket.CONNECTING
+  ) {
+    return;
+  }
+
+  // Nobody wants the connection - don't connect
+  if (refCount <= 0) return;
+
+  // The server authenticates the WS from the session cookie, which the browser
+  // sends automatically on this same-origin handshake — no token in JS.
+  const socket = new WebSocket(getWsUrl());
+  ws = socket;
+
+  socket.onopen = () => {
+    if (ws !== socket) return;
+    useEngineStore.getState().setConnected(true);
+  };
+
+  socket.onmessage = (e) => {
+    if (ws !== socket) return;
+    const event = parseEngineEvent(e.data);
+    if (event) {
+      useEngineStore.getState().addLog(event);
+    } else {
+      console.warn("Ignored malformed engine event");
+    }
+  };
+
+  socket.onclose = () => {
+    if (ws !== socket) return;
+    ws = null;
+    useEngineStore.getState().setConnected(false);
+
+    // Reconnect if there are still consumers
+    if (refCount > 0) {
+      reconnectTimer = setTimeout(scheduleConnect, 3000);
+    }
+  };
+
+  socket.onerror = () => {
+    // onclose will fire after onerror - no action needed
+  };
+}
+
+/** Debounced connect - waits 150ms so Strict Mode cleanup can cancel it. */
+function scheduleConnect() {
+  if (connectTimer) clearTimeout(connectTimer);
+  connectTimer = setTimeout(() => {
+    connectTimer = null;
+    doConnect();
+  }, 150);
+}
+
+function cancelScheduledConnect() {
+  if (connectTimer) {
+    clearTimeout(connectTimer);
+    connectTimer = null;
+  }
+}
+
+function addRef() {
+  refCount++;
+  if (refCount === 1) {
+    scheduleConnect();
+  }
+}
+
+function removeRef() {
+  refCount--;
+  if (refCount <= 0) {
+    refCount = 0;
+    // Cancel any pending connect
+    cancelScheduledConnect();
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    if (ws) {
+      ws.onclose = null; // prevent reconnect from the close handler
+      ws.close();
+      ws = null;
+      useEngineStore.getState().setConnected(false);
+    }
+  }
+}
+
+/**
+ * Hook that manages the WebSocket connection to /ws/engine.
+ *
+ * Uses a module-level singleton with debounced connect so React Strict
+ * Mode double-mounts, HMR re-renders, and multiple components calling
+ * this hook all share a single WebSocket connection.
+ */
+export function useEngineSocket() {
+  useEffect(() => {
+    addRef();
+    return () => removeRef();
+  }, []);
+}

@@ -1,0 +1,171 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  # Manual runs (Actions -> CI -> Run workflow, or gh workflow run ci.yml),
+  # since pushes to main don't trigger CI.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Rust
+  rust:
+    name: Rust
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo registry & build
+        uses: Swatinem/rust-cache@v2
+
+      # --all-features includes embed-ui, which compiles frontend/dist in.
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build web UI
+        working-directory: frontend
+        run: npm ci && npm run build
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (deny warnings)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Build
+        run: cargo build --all
+
+      - name: Run tests
+        run: cargo test --all
+
+  # Windows: the standalone binary targets it (#78). Covers paths, the
+  # per-user data directory and SQLite URLs, which Linux can't exercise.
+  windows:
+    name: Windows (CLI)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry & build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Test CLI
+        run: cargo test -p intelliflow-cli
+
+  # Storage and the webhook/deploy path against a real PostgreSQL (R-05):
+  # the other jobs only exercise SQLite.
+  postgres:
+    name: PostgreSQL
+    runs-on: ubuntu-24.04
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: z8run
+          POSTGRES_PASSWORD: z8run
+          POSTGRES_DB: z8run_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U z8run"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Disposable database; the tests wipe it (its name must contain "test").
+      Z8_TEST_POSTGRES_URL: postgres://z8run:z8run@localhost:5432/z8run_test
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry & build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Storage tests
+        run: cargo test -p intelliflow-storage --test postgres
+
+      - name: Webhook and deploy integration tests
+        run: cargo test -p intelliflow-api --test hook_security
+
+  # Known vulnerabilities in dependencies (RustSec and npm). Reviewed
+  # exceptions live in .cargo/audit.toml with their reasons.
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: RustSec advisories (cargo audit)
+        run: cargo audit
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+
+      - name: npm advisories (npm audit)
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
+  # Frontend
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint & format (Biome)
+        working-directory: frontend
+        run: npm run check
+
+      - name: Unit tests (Vitest)
+        working-directory: frontend
+        run: npm test
+
+      - name: Type check & build
+        working-directory: frontend
+        run: npm run build

@@ -1,0 +1,56 @@
+services:
+  # ── z8run backend (API + WebSocket) ──────────────────────
+  z8run:
+    image: ghcr.io/z8run/z8run-api:latest
+    container_name: z8run
+    restart: unless-stopped
+    environment:
+      Z8_PORT: "7700"
+      Z8_BIND: "0.0.0.0"
+      Z8_DB_URL: "postgres://z8run:${POSTGRES_PASSWORD:-z8run_secret}@host.docker.internal:5432/z8run"
+      Z8_DATA_DIR: "/app/data"
+      Z8_LOG_LEVEL: "${Z8_LOG_LEVEL:-info}"
+      Z8_JWT_SECRET: "${Z8_JWT_SECRET}"
+      Z8_VAULT_SECRET: "${Z8_VAULT_SECRET:-change-me-in-production}"
+      Z8_RATE_LIMIT_API: "${Z8_RATE_LIMIT_API:-100}"
+      Z8_RATE_LIMIT_AUTH: "${Z8_RATE_LIMIT_AUTH:-20}"
+      Z8_RATE_LIMIT_HOOK: "${Z8_RATE_LIMIT_HOOK:-200}"
+      Z8_RATE_LIMIT_WINDOW: "${Z8_RATE_LIMIT_WINDOW:-60}"
+      # Session cookie only over HTTPS. Set false only to reach the app over
+      # plain HTTP from another machine (testing); see .env.example.
+      Z8_COOKIE_SECURE: "${Z8_COOKIE_SECURE:-true}"
+      # Only reachable through nginx (no published port), so its
+      # X-Forwarded-For can be trusted. See deploy/nginx.conf.
+      Z8_TRUST_PROXY: "${Z8_TRUST_PROXY:-true}"
+      Z8_TRUSTED_PROXIES: "${Z8_TRUSTED_PROXIES:-}"
+      # Outbound policy for flows; see .env.example.
+      Z8_EGRESS_POLICY: "${Z8_EGRESS_POLICY:-strict}"
+      Z8_EGRESS_ALLOW: "${Z8_EGRESS_ALLOW:-}"
+      Z8_DB_SQLITE_DIR: "${Z8_DB_SQLITE_DIR:-}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - z8run_data:/app/data
+    networks:
+      - z8net
+
+  # ── Nginx (frontend + reverse proxy) ─────────────────────
+  nginx:
+    image: ghcr.io/z8run/z8run-nginx:latest
+    container_name: z8run-web
+    restart: unless-stopped
+    depends_on:
+      - z8run
+    ports:
+      - "${Z8_PUBLIC_PORT:-80}:80"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - z8net
+
+volumes:
+  z8run_data:
+
+networks:
+  z8net:
+    driver: bridge

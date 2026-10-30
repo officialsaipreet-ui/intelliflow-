@@ -1,0 +1,74 @@
+/* Fonts: Inter / JetBrains Mono when installed locally, else the system
+   stack (tailwind.config.ts). No remote font CSS: the CSP only allows
+   same-origin styles, and the standalone binary must work offline. */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-slate-700;
+  }
+
+  body {
+    @apply bg-slate-950 text-slate-50;
+  }
+
+  ::selection {
+    background-color: rgba(236, 102, 34, 0.35);
+    color: #fbf6f0;
+  }
+
+  /* Warm scrollbars */
+  * {
+    scrollbar-color: #4a3a2f transparent;
+    scrollbar-width: thin;
+  }
+}
+
+/* React Flow overrides - OUTSIDE @layer so they beat xyflow's styles */
+.react-flow__background {
+  background-color: #140f0c !important;
+}
+
+.react-flow__minimap {
+  background-color: #241b16 !important;
+  border-radius: 12px;
+  border: 1px solid #4a3a2f;
+}
+
+.react-flow__controls {
+  background: #241b16 !important;
+  border-radius: 12px;
+  border: 1px solid #4a3a2f !important;
+  overflow: hidden;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+.react-flow__controls-button {
+  background-color: #241b16 !important;
+  border-color: #4a3a2f !important;
+  border-bottom: 1px solid #4a3a2f !important;
+  color: #ae957d !important;
+  fill: #ae957d !important;
+  width: 28px !important;
+  height: 28px !important;
+}
+
+.react-flow__controls-button:hover {
+  background-color: #4a3a2f !important;
+  color: #f7823f !important;
+  fill: #f7823f !important;
+}
+
+.react-flow__controls-button svg {
+  fill: inherit !important;
+  max-width: 14px;
+  max-height: 14px;
+}
+
+.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge:hover .react-flow__edge-path {
+  stroke: #f7823f !important;
+}

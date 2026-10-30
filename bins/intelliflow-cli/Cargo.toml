@@ -1,0 +1,39 @@
+[package]
+name = "intelliflow-cli"
+description = "CLI for Intelliflow - visual workflow automation studio (based on z8run)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["cli", "automation", "workflow", "flow-engine", "self-hosted"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "intelliflow"
+path = "src/main.rs"
+
+[features]
+# Serve the web editor from the binary (requires a built frontend/dist).
+embed-ui = ["intelliflow-api/embed-ui"]
+
+[dependencies]
+intelliflow-core = { workspace = true }
+intelliflow-api = { workspace = true }
+intelliflow-storage = { workspace = true }
+intelliflow-runtime = { workspace = true }
+tokio = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+axum = { workspace = true }
+config = { workspace = true }
+dotenvy = { workspace = true }
+rand = { workspace = true }
+chrono = { workspace = true }
+sqlx = { workspace = true }
+

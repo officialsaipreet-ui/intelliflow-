@@ -1,0 +1,26 @@
+# cargo audit configuration (RustSec). Every ignored advisory needs its
+# reason next to it and should be revisited when the dependency updates.
+
+[advisories]
+ignore = [
+    # rustls-webpki 0.102.8 is pulled in only by rumqttc 0.25.1 (latest
+    # release), which uses it just for an error type (rumqttc src/tls.rs).
+    # Certificate verification runs on rustls 0.23 with rustls-webpki
+    # 0.103.13, which is patched. Dismissed on GitHub as "vulnerable code
+    # not used" (Dependabot alerts #24, #25, #28). Revisit when rumqttc
+    # updates its rustls-webpki dependency.
+    "RUSTSEC-2026-0098",
+    "RUSTSEC-2026-0099",
+    "RUSTSEC-2026-0104",
+    # Same rustls-webpki 0.102.8 from rumqttc: CRL distribution point
+    # matching, which that copy never runs (it only provides an error type).
+    "RUSTSEC-2026-0049",
+
+    # rsa 0.9 "Marvin" timing attack on RSA *decryption* with a private key;
+    # no fixed release exists. It is pulled in by jsonwebtoken (our JWTs are
+    # HS256 via Header/Validation::default(), so RSA code never runs) and by
+    # sqlx-mysql (it only encrypts the password with the server's public
+    # key). No private-key RSA operation happens in z8run. Revisit if RS*
+    # JWT algorithms are adopted.
+    "RUSTSEC-2023-0071",
+]
